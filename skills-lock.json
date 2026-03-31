@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "python-code-style": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "c375dffa8d94962e10193079af1527b149f43b68d60043830d89cbce1228cec7"
+    }
+  }
+}
