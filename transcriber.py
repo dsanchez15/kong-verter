@@ -50,19 +50,27 @@ class OfflineTranscriber(BaseTranscriber):
         "large-v3": 3100,
     }
 
+    # Session-level cache: avoids re-loading (and re-downloading) the same model
+    _model_cache: dict[str, object] = {}
+
     def __init__(self, model_size: str = "small") -> None:
         if model_size not in self.MODEL_SIZES:
             raise ValueError(f"Invalid model size '{model_size}'. Choose from: {self.MODEL_SIZES}")
         self.model_size = model_size
-        self._model = None  # Lazy-loaded on first transcription
 
     def _load_model(self) -> None:
-        """Lazy-load the WhisperModel to avoid long startup times."""
-        if self._model is None:
+        """Lazy-load the WhisperModel, using a session cache to avoid repeat downloads."""
+        if self.model_size not in OfflineTranscriber._model_cache:
             from faster_whisper import WhisperModel  # type: ignore[import-untyped]
 
             # Use CPU with INT8 quantization for broad compatibility
-            self._model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
+            OfflineTranscriber._model_cache[self.model_size] = WhisperModel(
+                self.model_size, device="cpu", compute_type="int8"
+            )
+
+    @property
+    def _model(self) -> object:
+        return OfflineTranscriber._model_cache.get(self.model_size)
 
     def transcribe(self, audio_path: Path, language: str | None = None) -> str:
         """Transcribe using faster-whisper.
