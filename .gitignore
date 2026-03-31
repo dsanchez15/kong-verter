@@ -1,26 +1,76 @@
-# Python
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyo
+
+# Virtual environments
 .venv/
+venv/
+env/
+
+# Build & packaging
 build/
 dist/
 *.egg-info/
+*.egg
+
+# Type checking & linting caches
 .mypy_cache/
 .ruff_cache/
-.vscode/
+.pyright/
 
-# Project Specific
+# ── IDE / Editors ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.user
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+# Windows
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+
+# ── Project Specific ──────────────────────────────────────────────────────────
+# Agent memory & internal tooling (not for version control)
 .agents/
+.agent/
+skills-lock.json
+
+# Scratch / temp files
+tmp/
+
+# Media files (large, not tracked)
 *.mp3
 *.mp4
 *.wav
 *.mkv
 *.avi
-*.txt
-!README.md
+*.mov
+*.webm
+*.m4a
+*.ogg
 
-# OS
-Thumbs.db
-Desktop.ini
-.DS_Store
+# Plain text outputs
+*.txt
+
+# User config (contains API keys - never commit!)
+# Stored in ~/.konverter/config.json (outside the repo) but just in case:
+config.json
+
+# ── Secrets & Environment ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.key
+*.pem

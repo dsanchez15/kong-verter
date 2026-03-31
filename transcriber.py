@@ -6,7 +6,9 @@ Provides a common interface (BaseTranscriber) with two concrete implementations:
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 
 class BaseTranscriber(ABC):
@@ -14,18 +16,15 @@ class BaseTranscriber(ABC):
 
     @abstractmethod
     def transcribe(self, audio_path: Path, language: str | None = None) -> str:
-        """Transcribe an audio file to text.
+        """Transcribe an audio file to text."""
+        ...
 
-        Args:
-            audio_path: Path to the input audio file (.mp3, .wav, etc.).
-            language: BCP-47 language code (e.g. "es", "en") or None for auto-detection.
+    @abstractmethod
+    def transcribe_stream(self, audio_path: Path, language: str | None = None) -> Iterator[tuple[str, Any]]:
+        """Transcribe an audio file and yield progress and segments.
 
-        Returns:
-            The full transcribed text as a single string.
-
-        Raises:
-            FileNotFoundError: If the audio file does not exist.
-            RuntimeError: If the transcription fails for any reason.
+        Yields:
+            Tuples of (type, content) where type is "segment" (str) or "progress" (float 0-1).
         """
         ...
 
@@ -73,28 +72,29 @@ class OfflineTranscriber(BaseTranscriber):
         return OfflineTranscriber._model_cache.get(self.model_size)
 
     def transcribe(self, audio_path: Path, language: str | None = None) -> str:
-        """Transcribe using faster-whisper.
+        """Transcribe using faster-whisper."""
+        return " ".join(content for t, content in self.transcribe_stream(audio_path, language) if t == "segment")
 
-        Args:
-            audio_path: Path to the audio file.
-            language: Language code (e.g. "es", "en") or None for auto-detect.
-
-        Returns:
-            Full transcribed text.
-        """
+    def transcribe_stream(self, audio_path: Path, language: str | None = None) -> Iterator[tuple[str, Any]]:
+        """Transcribe using faster-whisper and yield updates."""
         if not audio_path.exists():
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
         self._load_model()
 
-        # language=None triggers automatic language detection in faster-whisper
         lang_arg = language if language != "auto" else None
-        segments, _info = self._model.transcribe(  # type: ignore[union-attr]
+        segments, info = self._model.transcribe(  # type: ignore[union-attr]
             str(audio_path),
             language=lang_arg,
-            vad_filter=True,  # Skip silent segments for speed
+            vad_filter=True,
         )
-        return " ".join(segment.text.strip() for segment in segments)
+
+        duration = info.duration
+        for segment in segments:
+            yield "segment", segment.text.strip()
+            if duration > 0:
+                progress = segment.end / duration
+                yield "progress", min(1.0, progress)
 
 
 class OnlineTranscriber(BaseTranscriber):
@@ -118,33 +118,28 @@ class OnlineTranscriber(BaseTranscriber):
         self.language_code = language_code
 
     def transcribe(self, audio_path: Path, language: str | None = None) -> str:
-        """Transcribe using Google Speech API via SpeechRecognition.
+        """Transcribe using Google Speech API via SpeechRecognition."""
+        # For simplicity, we just collect all items from the stream
+        return " ".join(content for t, content in self.transcribe_stream(audio_path, language) if t == "segment")
 
-        Converts MP3 to WAV in memory if needed, then sends to Google's API.
-
-        Args:
-            audio_path: Path to the audio file (MP3 or WAV).
-            language: Language code ("es", "en", "auto"). Overrides the instance default.
-
-        Returns:
-            Transcribed text.
-
-        Raises:
-            RuntimeError: On network or API errors.
-        """
+    def transcribe_stream(self, audio_path: Path, language: str | None = None) -> Iterator[tuple[str, Any]]:
+        """Transcribe using Google Speech API and yield updates."""
         import speech_recognition as sr  # type: ignore[import-untyped]
 
         if not audio_path.exists():
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
+        yield "progress", 0.1
         lang = self.LANGUAGE_MAP.get(language or "auto", "es-CO") if language else self.language_code
         recognizer = sr.Recognizer()
 
-        # SpeechRecognition reads WAV natively; for MP3 it uses pydub if available
         try:
             with sr.AudioFile(str(audio_path)) as source:
                 audio_data = recognizer.record(source)
-            return str(recognizer.recognize_google(audio_data, language=lang))
+            yield "progress", 0.5
+            text = str(recognizer.recognize_google(audio_data, language=lang))
+            yield "segment", text
+            yield "progress", 1.0
         except sr.UnknownValueError:
             raise RuntimeError("Google Speech API could not understand the audio.")
         except sr.RequestError as e:

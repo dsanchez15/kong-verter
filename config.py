@@ -13,9 +13,12 @@ _CONFIG_FILE = _CONFIG_DIR / "config.json"
 
 # Default settings
 _DEFAULTS: dict[str, Any] = {
-    "engine": "offline",       # "offline" | "online"
-    "model": "small",          # "tiny" | "base" | "small" | "medium" | "large-v3"
-    "language": "auto",        # "auto" | "es" | "en"
+    "engine": "offline",       # Transcription: "offline" | "online"
+    "model": "small",          # Transcription: "tiny" | "base" | "small" | "medium" | "large-v3"
+    "language": "auto",        # Transcription: "auto" | "es" | "en"
+    "llm_engine": "groq",      # Summarization: "groq" | "ollama"
+    "groq_api_key": "",        # Groq Cloud API Key
+    "ollama_model": "llama3.2",# Ollama Local Model
 }
 
 
