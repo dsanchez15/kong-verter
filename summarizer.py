@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
+import logging
 from typing import Any
+
+log = logging.getLogger("kong-verter.summarizer")
 
 
 class LLMProvider(ABC):
@@ -32,6 +35,7 @@ class GroqProvider(LLMProvider):
         if not self.api_key:
             raise ValueError("Groq API Key no configurada. Por favor, ve a Configuración.")
 
+        log.info("Groq request | model=llama-3.3-70b-specdec | prompt_len=%d", len(prompt))
         client = Groq(api_key=self.api_key)
         stream = client.chat.completions.create(
             messages=[
@@ -61,6 +65,7 @@ class OllamaProvider(LLMProvider):
     def generate_stream(self, prompt: str) -> Iterator[str]:
         import ollama
 
+        log.info("Ollama request | model=%s | prompt_len=%d", self.model_name, len(prompt))
         try:
             stream = ollama.chat(
                 model=self.model_name,

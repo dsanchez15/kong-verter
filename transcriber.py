@@ -62,9 +62,8 @@ class OfflineTranscriber(BaseTranscriber):
         if self.model_size not in OfflineTranscriber._model_cache:
             from faster_whisper import WhisperModel  # type: ignore[import-untyped]
 
-            # Use CPU with INT8 quantization for broad compatibility
             OfflineTranscriber._model_cache[self.model_size] = WhisperModel(
-                self.model_size, device="cpu", compute_type="int8"
+                self.model_size, device="auto", compute_type="auto"
             )
 
     @property
@@ -86,6 +85,7 @@ class OfflineTranscriber(BaseTranscriber):
         segments, info = self._model.transcribe(  # type: ignore[union-attr]
             str(audio_path),
             language=lang_arg,
+            beam_size=1,
             vad_filter=True,
         )
 

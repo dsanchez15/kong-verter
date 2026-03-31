@@ -23,7 +23,7 @@
 
 | Requisito | Detalle |
 |---|---|
-| **Python** | 3.10 o superior |
+| **Python** | 3.10 o superior (`pip >= 21.3` requerido para editable install) |
 | **FFmpeg** | Requerido para conversión de video/audio. Debe estar en el PATH. |
 | **Ollama** *(opcional)* | Para usar LLMs locales. Descarga desde [ollama.ai](https://ollama.ai) |
 | **Clave API de Groq** *(opcional)* | Para usar el motor Cloud. Obtén una en [console.groq.com](https://console.groq.com) |
@@ -44,6 +44,7 @@ python -m venv .venv
 .\.venv\Scripts\activate
 
 # 3. Instalar dependencias
+pip install --upgrade pip
 pip install -e .
 
 # 4. Ejecutar
@@ -67,6 +68,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 # 4. Instalar dependencias de Python
+pip install --upgrade pip
 pip install -e .
 
 # 5. Ejecutar

@@ -7,11 +7,22 @@ Four-tab layout:
   - ⚙️ Configuración: Engine, model, language, LLM settings, and Template Editor.
 """
 
+import logging
 import tempfile
 import threading
 import time
 from pathlib import Path
 from tkinter import filedialog, messagebox
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler(Path.home() / ".konverter" / "kong-verter.log"),
+        logging.StreamHandler(),
+    ],
+)
+log = logging.getLogger("kong-verter")
 
 import customtkinter as ctk
 
@@ -304,6 +315,7 @@ class KonverterApp(ctk.CTk):
 
     def _run_summarization(self, text: str, template_body: str) -> None:
         try:
+            log.info("Starting summarization | engine=%s", self._config.get("llm_engine"))
             self.after(0, self._prepare_summary_ui)
             summarizer = Summarizer(self._config)
             
@@ -312,6 +324,7 @@ class KonverterApp(ctk.CTk):
 
             self.after(0, self._on_summary_success)
         except Exception as e:
+            log.exception("Summarization failed")
             self.after(0, self._on_generic_error, str(e), self._btn_summarize, self._trans_status_var)
 
     def _on_summary_success(self) -> None:
