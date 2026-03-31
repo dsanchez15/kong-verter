@@ -1,20 +1,41 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Dominio: Herramienta desktop para transcribir audio/video y generar resúmenes con IA.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Tech stack:
+    - Python 3.10+
+    - CustomTkinter (GUI desktop)
+    - faster-whisper (transcripción offline)
+    - SpeechRecognition + Google Speech API (transcripción online)
+    - Groq SDK (LLM cloud)
+    - Ollama SDK (LLM local)
+    - MoviePy (conversión video → audio)
+
+  Patrones de arquitectura:
+    - ABC + Protocol para providers (LLMProvider, BaseTranscriber)
+    - Threading para operaciones pesadas (no asyncio)
+    - Streaming con iteradores (yield chunks)
+    - Config en JSON plano (~/.konverter/)
+    - Templates de prompts en JSON (~/.konverter/templates/)
+
+  Convenciones de código:
+    - Ruff como linter y formatter (line-length=120)
+    - MyPy strict habilitado
+    - Docstrings en inglés
+    - UI y mensajes al usuario en español
+    - Todo código nuevo debe pasar ruff y mypy strict
+
+  Idioma de artifacts:
+    - Proposals, designs, specs y tasks se escriben en español
+
+rules:
+  proposal:
+    - Escribir en español
+    - Incluir sección de "No-objetivos" cuando aplique
+  design:
+    - Escribir en español
+    - Incluir diagramas ASCII cuando ayuden a clarificar la arquitectura
+  tasks:
+    - Escribir en español
+    - Dividir tareas en chunks de máximo 2 horas
