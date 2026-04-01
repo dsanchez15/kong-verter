@@ -5,10 +5,27 @@ Provides a common interface (BaseTranscriber) with two concrete implementations:
 - OnlineTranscriber: Uses SpeechRecognition + Google Speech API (requires internet).
 """
 
+import os
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+
+# ---------------------------------------------------------------------------
+# Windows: register NVIDIA CUDA DLL directories so ctranslate2 can find them.
+# pip installs cublas/cudnn under `.venv/Lib/site-packages/nvidia/*/bin/` but
+# does NOT add those paths to the Windows DLL search path automatically.
+# ctranslate2 tries to load cublas64_12.dll at *import time*, so this must
+# run before any faster_whisper / ctranslate2 import.
+# ---------------------------------------------------------------------------
+if sys.platform == "win32":
+    _nvidia_base = Path(sys.prefix) / "Lib" / "site-packages" / "nvidia"
+    for _nvidia_lib in ["cublas", "cudnn", "cuda_runtime", "cuda_nvrtc"]:
+        _bin_dir = _nvidia_base / _nvidia_lib / "bin"
+        if _bin_dir.exists():
+            os.add_dll_directory(str(_bin_dir))
+            os.environ["PATH"] = str(_bin_dir) + os.pathsep + os.environ.get("PATH", "")
 
 
 class BaseTranscriber(ABC):
