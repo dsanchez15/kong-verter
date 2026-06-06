@@ -53,6 +53,16 @@ python src/gui.py
 
 > **FFmpeg en Windows:** Descarga desde [ffmpeg.org](https://ffmpeg.org/download.html) y añádelo al PATH del sistema, o usa `winget install ffmpeg`.
 
+#### ⚡ Lanzador rápido (Windows)
+
+```bash
+# Sin ventana de consola — doble clic en el archivo
+run.vbs
+
+# O crea un acceso directo en el escritorio:
+scripts\create-desktop-shortcut.vbs
+```
+
 ### macOS
 
 ```bash
@@ -77,6 +87,14 @@ python src/gui.py
 
 > **Ollama en macOS:** Descarga el instalador nativo desde [ollama.ai](https://ollama.ai) y luego instala los modelos que quieras: `ollama pull llama3.2`.
 
+#### ⚡ Lanzador rápido (macOS)
+
+```bash
+# Doble clic en Finder (requiere permiso de ejecución la primera vez)
+chmod +x run.command
+./run.command
+```
+
 ### Linux
 
 ```bash
@@ -93,14 +111,19 @@ sudo apt install ffmpeg
 ```
 kong-verter/
 ├── src/
-│   ├── gui.py              # Interfaz de usuario (CustomTkinter, 4 pestañas)
+│   ├── gui.py              # Interfaz de usuario (CustomTkinter, sidebar + 4 secciones)
 │   ├── transcriber.py      # Motores de transcripción (patrón estrategia: Offline/Online)
 │   ├── summarizer.py       # Motor LLM con arquitectura de Providers (Groq / Ollama)
 │   ├── video_converter.py  # Conversión de video a MP3 vía moviepy/ffmpeg
 │   ├── template_manager.py # CRUD de plantillas personalizadas para el LLM
 │   └── config.py           # Persistencia de configuración en ~/.konverter/config.json
-├── requirements.txt    # Dependencias directas del proyecto
-└── pyproject.toml      # Metadatos y configuración de herramientas (ruff, mypy)
+├── scripts/
+│   └── create-desktop-shortcut.vbs  # Crea acceso directo en el escritorio (Windows)
+├── icon.ico             # Icono de la aplicación (usado por el acceso directo)
+├── run.vbs              # Lanzador sin consola (Windows)
+├── run.command          # Lanzador con doble clic (macOS)
+├── requirements.txt     # Dependencias directas del proyecto
+└── pyproject.toml       # Metadatos y configuración de herramientas (ruff, mypy)
 ```
 
 ### Módulos clave
