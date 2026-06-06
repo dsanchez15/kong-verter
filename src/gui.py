@@ -14,6 +14,14 @@ import time
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
+import customtkinter as ctk
+
+import template_manager
+from config import load_config, save_config
+from summarizer import Summarizer
+from transcriber import get_transcriber
+from video_converter import convert_video_to_audio
+
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -23,14 +31,6 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger("kong-verter")
-
-import customtkinter as ctk
-
-import template_manager
-from config import load_config, save_config
-from summarizer import Summarizer
-from transcriber import get_transcriber
-from video_converter import convert_video_to_audio
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 VIDEO_EXTS = ("*.mp4", "*.mkv", "*.avi", "*.mov", "*.webm")
@@ -70,7 +70,7 @@ _SIDEBAR_BTN_HOVER = "#0f3460"
 _SIDEBAR_WIDTH = 160
 
 
-class KonverterApp(ctk.CTk):
+class KonverterApp(ctk.CTk):  # type: ignore[misc]
     """Main application window with sidebar navigation layout."""
 
     def __init__(self) -> None:
@@ -108,6 +108,7 @@ class KonverterApp(ctk.CTk):
         self._build_settings_section()
 
         # ── Status bar ───────────────────────────────────────────────────────
+        self._ollama_connected: bool = False
         self._build_status_bar()
 
         # ── Initial state ────────────────────────────────────────────────────
@@ -198,7 +199,7 @@ class KonverterApp(ctk.CTk):
         self._toast.place(relx=0.5, y=10, anchor="n", relwidth=0.6)
         if self._toast_job:
             self.after_cancel(self._toast_job)
-        self._toast_job = self.after(duration, lambda: self._toast.place_forget())  # type: ignore[assignment]
+        self._toast_job = self.after(duration, lambda: self._toast.place_forget())
 
     # ══════════════════════════════════════════════════════════════════════════
     # Section 1 — Transcribir (3 sub-tabs)
@@ -401,9 +402,8 @@ class KonverterApp(ctk.CTk):
             audio_path = Path(file_path)
             if audio_path.suffix.lower() in [".mp4", ".mkv", ".avi", ".mov", ".webm"]:
                 self.after(0, self._trans_status_var.set, "⏳ Extrayendo audio...")
-                tmp_file = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-                tmp_path = Path(tmp_file.name)
-                tmp_file.close()
+                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_file:
+                    tmp_path = Path(tmp_file.name)
                 convert_video_to_audio(file_path, str(tmp_path))
                 audio_path = tmp_path
 
@@ -729,18 +729,17 @@ class KonverterApp(ctk.CTk):
         self._btn_conv.configure(state="disabled")
         threading.Thread(target=self._run_conversion, args=(v, self._conv_output_var.get()), daemon=True).start()
 
+    def _on_conversion_success(self, res: str) -> None:
+        """Handle successful video conversion."""
+        self._btn_conv.configure(state="normal")
+        self._conv_status_var.set(f"✅ Guardado: {res}")
+        self._show_toast("✅ Conversión exitosa")
+
     def _run_conversion(self, v: str, o: str) -> None:
         """Run video conversion in background thread."""
         try:
             res = convert_video_to_audio(v, o or None)
-            self.after(
-                0,
-                lambda: [
-                    self._btn_conv.configure(state="normal"),
-                    self._conv_status_var.set(f"✅ Guardado: {res}"),
-                    self._show_toast("✅ Conversión exitosa"),
-                ],
-            )
+            self.after(0, self._on_conversion_success, str(res))
         except Exception as e:
             self.after(0, self._on_generic_error, str(e), self._btn_conv, self._conv_status_var)
 
@@ -967,8 +966,6 @@ class KonverterApp(ctk.CTk):
 
     def _build_status_bar(self) -> None:
         """Build the status bar at the bottom of the window."""
-        self._ollama_connected: bool = False
-
         bar = ctk.CTkFrame(self, height=30, corner_radius=0, fg_color="#1a1a2e")
         bar.grid(row=2, column=0, columnspan=2, sticky="ew")
         bar.grid_columnconfigure(3, weight=1)

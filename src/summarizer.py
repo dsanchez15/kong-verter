@@ -1,6 +1,6 @@
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
-import logging
 from typing import Any
 
 log = logging.getLogger("kong-verter.summarizer")

@@ -45,7 +45,9 @@ ehthumbs.db
 # Agent memory & internal tooling (not for version control)
 .agents/
 .agent/
+.kiro/
 skills-lock.json
+openspec/
 
 # Scratch / temp files
 tmp/
@@ -63,6 +65,7 @@ tmp/
 
 # Plain text outputs
 *.txt
+!requirements.txt
 
 # User config (contains API keys - never commit!)
 # Stored in ~/.konverter/config.json (outside the repo) but just in case:

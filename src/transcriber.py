@@ -14,18 +14,51 @@ from typing import Any
 
 # ---------------------------------------------------------------------------
 # Windows: register NVIDIA CUDA DLL directories so ctranslate2 can find them.
-# pip installs cublas/cudnn under `.venv/Lib/site-packages/nvidia/*/bin/` but
-# does NOT add those paths to the Windows DLL search path automatically.
-# ctranslate2 tries to load cublas64_12.dll at *import time*, so this must
-# run before any faster_whisper / ctranslate2 import.
+# pip installs cublas/cudnn under site-packages/nvidia/*/bin/ but does NOT add
+# those paths to the Windows DLL search path automatically. ctranslate2 tries to
+# load cublas64_12.dll at *import time*, so this must run before any
+# faster_whisper / ctranslate2 import.
 # ---------------------------------------------------------------------------
 if sys.platform == "win32":
+    _nvidia_found: bool = False
+
+    # Helper: try to register a single nvidia bin directory
+    def _register_nvidia_bin(base: Path) -> None:
+        for lib in ("cublas", "cudnn", "cuda_runtime", "cuda_nvrtc"):
+            bin_dir = base / lib / "bin"
+            if bin_dir.exists():
+                os.add_dll_directory(str(bin_dir))
+                os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
+
+    # Strategy 1: sys.prefix (works when venv is active or python.exe is called directly)
     _nvidia_base = Path(sys.prefix) / "Lib" / "site-packages" / "nvidia"
-    for _nvidia_lib in ["cublas", "cudnn", "cuda_runtime", "cuda_nvrtc"]:
-        _bin_dir = _nvidia_base / _nvidia_lib / "bin"
-        if _bin_dir.exists():
-            os.add_dll_directory(str(_bin_dir))
-            os.environ["PATH"] = str(_bin_dir) + os.pathsep + os.environ.get("PATH", "")
+    if _nvidia_base.exists():
+        _register_nvidia_bin(_nvidia_base)
+        _nvidia_found = True
+
+    # Strategy 2: search sys.path entries for a site-packages that contains nvidia/
+    if not _nvidia_found:
+        for sp in sys.path:
+            candidate = Path(sp) / "nvidia"
+            if candidate.exists():
+                _register_nvidia_bin(candidate)
+                _nvidia_found = True
+                break
+            # Also try parent (some entries point inside a package, not site-packages root)
+            candidate = Path(sp).parent / "nvidia"
+            if candidate.exists():
+                _register_nvidia_bin(candidate)
+                _nvidia_found = True
+                break
+
+    # Strategy 3: look for a .venv / venv next to this script
+    if not _nvidia_found:
+        for venv_name in (".venv", "venv", "env"):
+            candidate = Path(__file__).parent / venv_name / "Lib" / "site-packages" / "nvidia"
+            if candidate.exists():
+                _register_nvidia_bin(candidate)
+                _nvidia_found = True
+                break
 
 
 class BaseTranscriber(ABC):
@@ -84,7 +117,7 @@ class OfflineTranscriber(BaseTranscriber):
             )
 
     @property
-    def _model(self) -> object:
+    def _model(self) -> Any:
         return OfflineTranscriber._model_cache.get(self.model_size)
 
     def transcribe(self, audio_path: Path, language: str | None = None) -> str:
@@ -99,7 +132,7 @@ class OfflineTranscriber(BaseTranscriber):
         self._load_model()
 
         lang_arg = language if language != "auto" else None
-        segments, info = self._model.transcribe(  # type: ignore[union-attr]
+        segments, info = self._model.transcribe(
             str(audio_path),
             language=lang_arg,
             beam_size=1,
@@ -157,8 +190,8 @@ class OnlineTranscriber(BaseTranscriber):
             text = str(recognizer.recognize_google(audio_data, language=lang))
             yield "segment", text
             yield "progress", 1.0
-        except sr.UnknownValueError:
-            raise RuntimeError("Google Speech API could not understand the audio.")
+        except sr.UnknownValueError as exc:
+            raise RuntimeError("Google Speech API could not understand the audio.") from exc
         except sr.RequestError as e:
             raise RuntimeError(f"Google Speech API request failed: {e}") from e
 

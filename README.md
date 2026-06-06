@@ -45,10 +45,10 @@ python -m venv .venv
 
 # 3. Instalar dependencias
 pip install --upgrade pip
-pip install -e .
+pip install -r requirements.txt
 
 # 4. Ejecutar
-python gui.py
+python src/gui.py
 ```
 
 > **FFmpeg en Windows:** Descarga desde [ffmpeg.org](https://ffmpeg.org/download.html) y añádelo al PATH del sistema, o usa `winget install ffmpeg`.
@@ -69,10 +69,10 @@ source .venv/bin/activate
 
 # 4. Instalar dependencias de Python
 pip install --upgrade pip
-pip install -e .
+pip install -r requirements.txt
 
 # 5. Ejecutar
-python gui.py
+python src/gui.py
 ```
 
 > **Ollama en macOS:** Descarga el instalador nativo desde [ollama.ai](https://ollama.ai) y luego instala los modelos que quieras: `ollama pull llama3.2`.
@@ -92,13 +92,15 @@ sudo apt install ffmpeg
 
 ```
 kong-verter/
-├── gui.py              # Interfaz de usuario (CustomTkinter, 4 pestañas)
-├── transcriber.py      # Motores de transcripción (patrón estrategia: Offline/Online)
-├── summarizer.py       # Motor LLM con arquitectura de Providers (Groq / Ollama)
-├── video_converter.py  # Conversión de video a MP3 vía moviepy/ffmpeg
-├── template_manager.py # CRUD de plantillas personalizadas para el LLM
-├── config.py           # Persistencia de configuración en ~/.konverter/config.json
-└── pyproject.toml      # Dependencias y configuración de herramientas (ruff, mypy)
+├── src/
+│   ├── gui.py              # Interfaz de usuario (CustomTkinter, 4 pestañas)
+│   ├── transcriber.py      # Motores de transcripción (patrón estrategia: Offline/Online)
+│   ├── summarizer.py       # Motor LLM con arquitectura de Providers (Groq / Ollama)
+│   ├── video_converter.py  # Conversión de video a MP3 vía moviepy/ffmpeg
+│   ├── template_manager.py # CRUD de plantillas personalizadas para el LLM
+│   └── config.py           # Persistencia de configuración en ~/.konverter/config.json
+├── requirements.txt    # Dependencias directas del proyecto
+└── pyproject.toml      # Metadatos y configuración de herramientas (ruff, mypy)
 ```
 
 ### Módulos clave
