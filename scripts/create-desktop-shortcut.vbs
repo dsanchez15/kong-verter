@@ -13,7 +13,7 @@ End If
 Set WshShell = CreateObject("WScript.Shell")
 desktop = WshShell.SpecialFolders("Desktop")
 
-iconPath = repoRoot & "\icon.ico"
+iconPath = repoRoot & "\assets\icon.ico"
 If Not fso.FileExists(iconPath) Then
     iconPath = "%SystemRoot%\System32\SHELL32.dll,14"
 End If

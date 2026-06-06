@@ -48,7 +48,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 # 4. Ejecutar
-python src/gui.py
+python -m app.main
 ```
 
 > **FFmpeg en Windows:** Descarga desde [ffmpeg.org](https://ffmpeg.org/download.html) y añádelo al PATH del sistema, o usa `winget install ffmpeg`.
@@ -82,7 +82,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 # 5. Ejecutar
-python src/gui.py
+python -m app.main
 ```
 
 > **Ollama en macOS:** Descarga el instalador nativo desde [ollama.ai](https://ollama.ai) y luego instala los modelos que quieras: `ollama pull llama3.2`.
@@ -110,20 +110,26 @@ sudo apt install ffmpeg
 
 ```
 kong-verter/
-├── src/
-│   ├── gui.py              # Interfaz de usuario (CustomTkinter, sidebar + 4 secciones)
-│   ├── transcriber.py      # Motores de transcripción (patrón estrategia: Offline/Online)
-│   ├── summarizer.py       # Motor LLM con arquitectura de Providers (Groq / Ollama)
-│   ├── video_converter.py  # Conversión de video a MP3 vía moviepy/ffmpeg
-│   ├── template_manager.py # CRUD de plantillas personalizadas para el LLM
-│   └── config.py           # Persistencia de configuración en ~/.konverter/config.json
+├── app/
+│   ├── main.py              # Punto de entrada
+│   ├── ui/
+│   │   └── app.py           # Interfaz de usuario (CustomTkinter, sidebar + 4 secciones)
+│   ├── audio/
+│   │   ├── transcriber.py   # Motores de transcripción (Offline/Online)
+│   │   └── video_converter.py  # Conversión de video a MP3
+│   ├── llm/
+│   │   ├── summarizer.py    # Motor LLM (Groq / Ollama)
+│   │   └── templates.py     # CRUD de plantillas personalizadas
+│   └── core/
+│       └── config.py        # Persistencia de configuración
 ├── scripts/
 │   └── create-desktop-shortcut.vbs  # Crea acceso directo en el escritorio (Windows)
-├── icon.ico             # Icono de la aplicación (usado por el acceso directo)
+├── assets/
+│   └── icon.ico           # Icono de la aplicación
 ├── run.vbs              # Lanzador sin consola (Windows)
 ├── run.command          # Lanzador con doble clic (macOS)
-├── requirements.txt     # Dependencias directas del proyecto
-└── pyproject.toml       # Metadatos y configuración de herramientas (ruff, mypy)
+├── requirements.txt     # Dependencias directas
+└── pyproject.toml       # Metadatos y configuración de herramientas
 ```
 
 ### Módulos clave

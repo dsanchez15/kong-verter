@@ -11,4 +11,4 @@ if [ ! -f ".venv/bin/python" ]; then
 fi
 
 source .venv/bin/activate
-python src/gui.py &
+python -m app.main &

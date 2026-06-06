@@ -16,11 +16,11 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
-import template_manager
-from config import load_config, save_config
-from summarizer import Summarizer
-from transcriber import get_transcriber
-from video_converter import convert_video_to_audio
+from app.audio.transcriber import get_transcriber
+from app.audio.video_converter import convert_video_to_audio
+from app.core.config import load_config, save_config
+from app.llm import templates as template_manager
+from app.llm.summarizer import Summarizer
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -1021,8 +1021,4 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         ctk.CTkButton(file_frame, text="📁 Examinar", width=110, command=browse_fn).grid(row=0, column=2, padx=10, pady=8)
 
 
-if __name__ == "__main__":
-    ctk.set_appearance_mode("System")
-    ctk.set_default_color_theme("blue")
-    app = KonverterApp()
-    app.mainloop()
+

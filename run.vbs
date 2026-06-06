@@ -5,7 +5,6 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 repoRoot = fso.GetParentFolderName(WScript.ScriptFullName)
 
 pythonw = repoRoot & "\.venv\Scripts\pythonw.exe"
-gui     = repoRoot & "\src\gui.py"
 
 If Not fso.FileExists(pythonw) Then
     MsgBox "Virtual environment not found." & vbCrLf & _
@@ -17,4 +16,4 @@ End If
 
 Set WshShell = CreateObject("WScript.Shell")
 WshShell.CurrentDirectory = repoRoot
-WshShell.Run Chr(34) & pythonw & Chr(34) & " " & Chr(34) & gui & Chr(34), 0, False
+WshShell.Run Chr(34) & pythonw & Chr(34) & " -m app.main", 0, False
