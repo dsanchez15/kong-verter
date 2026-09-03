@@ -8,6 +8,7 @@ Sidebar navigation layout with four sections:
 """
 
 import logging
+import shutil
 import tempfile
 import threading
 import time
@@ -116,6 +117,7 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         self._refresh_ollama_models()
         self._update_key_visibility()
 
+
     # ══════════════════════════════════════════════════════════════════════════
     # Sidebar & Navigation
     # ══════════════════════════════════════════════════════════════════════════
@@ -127,7 +129,6 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         sidebar.grid_propagate(False)
         sidebar.grid_columnconfigure(0, weight=1)
 
-        # Header
         ctk.CTkLabel(
             sidebar, text="Kong-verter",
             font=ctk.CTkFont(size=18, weight="bold"),
@@ -138,7 +139,6 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
             font=ctk.CTkFont(size=10), text_color="gray",
         ).grid(row=1, column=0, padx=10, pady=(0, 20), sticky="ew")
 
-        # Navigation buttons
         self._nav_buttons: dict[str, ctk.CTkButton] = {}
         nav_items = [
             ("transcribir", "📝  Transcribir"),
@@ -156,10 +156,8 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
             btn.grid(row=i + 2, column=0, padx=8, pady=2, sticky="ew")
             self._nav_buttons[key] = btn
 
-        # Spacer
         sidebar.grid_rowconfigure(len(nav_items) + 2, weight=1)
 
-        # Settings button at bottom
         btn_settings = ctk.CTkButton(
             sidebar, text="⚙️  Configuración", anchor="w",
             font=ctk.CTkFont(size=13),
@@ -174,13 +172,10 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         """Switch the visible content section and update sidebar highlight."""
         if name == self._active_section:
             return
-        # Hide current
         if self._active_section and self._active_section in self._sections:
             self._sections[self._active_section].grid_remove()
-        # Show new
         if name in self._sections:
             self._sections[name].grid(row=0, column=1, rowspan=2, sticky="nsew", padx=0, pady=0)
-        # Update button colors
         for key, btn in self._nav_buttons.items():
             if key == name:
                 btn.configure(fg_color=_SIDEBAR_BTN_ACTIVE)
@@ -223,55 +218,66 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         self._build_trans_result_tab(sub_tabs)
 
     def _build_transcription_tab(self, sub_tabs: ctk.CTkTabview) -> None:
-        """Build the Transcription sub-tab."""
+        """Build the Transcription sub-tab with multi-file batch support."""
         tab = sub_tabs.tab("📄  Transcripción")
         tab.grid_columnconfigure(0, weight=1)
-        tab.grid_rowconfigure(2, weight=1)
+        tab.grid_rowconfigure(1, weight=1)
 
-        self._trans_file_var = ctk.StringVar()
-        self._trans_status_var = ctk.StringVar(value="Selecciona un archivo para comenzar.")
-        self._trans_file_var.trace_add("write", self._on_trans_file_changed)
+        # Internal state: list of files queued for transcription
+        self._trans_files: list[Path] = []
+        self._trans_running: bool = False
 
-        # File input
-        self._add_file_row(tab, row=0, label="Video o Audio:", var=self._trans_file_var, browse_fn=self._browse_media)
+        # ── Top bar: file selector + counter ────────────────────────────────
+        top_bar = ctk.CTkFrame(tab, fg_color="transparent")
+        top_bar.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="ew")
+        top_bar.grid_columnconfigure(1, weight=1)
 
-        # Status
-        ctk.CTkLabel(tab, textvariable=self._trans_status_var, text_color="gray", anchor="w").grid(
-            row=1, column=0, padx=10, pady=(4, 0), sticky="ew"
+        self._btn_add_files = ctk.CTkButton(
+            top_bar, text="📁  Agregar Videos",
+            font=ctk.CTkFont(size=13), width=160, height=36,
+            command=self._browse_media_multiple,
         )
+        self._btn_add_files.grid(row=0, column=0, padx=(0, 10))
 
-        # Text area
-        self._trans_textbox = ctk.CTkTextbox(tab, font=ctk.CTkFont(size=13), wrap="word")
-        self._trans_textbox.grid(row=2, column=0, padx=10, pady=8, sticky="nsew")
-        self._trans_textbox.insert("0.0", "La transcripción aparecerá aquí…")
-        self._trans_textbox.configure(state="disabled")
+        self._trans_queue_label = ctk.CTkLabel(
+            top_bar, text="Sin archivos en cola.",
+            font=ctk.CTkFont(size=12), text_color="gray", anchor="w",
+        )
+        self._trans_queue_label.grid(row=0, column=1, sticky="ew")
 
-        # Transcribe button
+        self._btn_clear_queue = ctk.CTkButton(
+            top_bar, text="🗑 Limpiar",
+            font=ctk.CTkFont(size=12), width=90, height=36,
+            fg_color="gray30", hover_color="gray40",
+            command=self._clear_trans_queue,
+        )
+        self._btn_clear_queue.grid(row=0, column=2, padx=(10, 0))
+        self._btn_clear_queue.configure(state="disabled")
+
+        # ── Video progress list (scrollable) ────────────────────────────────
+        self._trans_list_frame = ctk.CTkScrollableFrame(tab, label_text="Cola de transcripción")
+        self._trans_list_frame.grid(row=1, column=0, padx=10, pady=5, sticky="nsew")
+        self._trans_list_frame.grid_columnconfigure(0, weight=1)
+
+        # Placeholder shown when queue is empty
+        self._trans_list_placeholder = ctk.CTkLabel(
+            self._trans_list_frame,
+            text="Agrega videos con el botón de arriba.\nSe procesarán en orden.",
+            font=ctk.CTkFont(size=12), text_color="gray",
+        )
+        self._trans_list_placeholder.grid(row=0, column=0, pady=40)
+
+        # Row widgets per file: {path_str: {"row_frame", "status_label", "progress_bar", "pct_label"}}
+        self._trans_row_widgets: dict[str, dict] = {}
+
+        # ── Transcribe button ────────────────────────────────────────────────
         self._btn_transcribe = ctk.CTkButton(
-            tab, text="🎙️  Transcribir",
+            tab, text="🎙️  Transcribir Todo",
             font=ctk.CTkFont(size=14, weight="bold"), height=40,
-            command=self._start_transcription,
+            command=self._start_batch_transcription,
         )
-        self._btn_transcribe.grid(row=3, column=0, padx=10, pady=(0, 5), sticky="ew")
+        self._btn_transcribe.grid(row=2, column=0, padx=10, pady=(5, 10), sticky="ew")
 
-        # Progress
-        self._progress_frame = ctk.CTkFrame(tab, fg_color="transparent")
-        self._progress_frame.grid(row=4, column=0, padx=10, pady=(0, 10), sticky="ew")
-        self._progress_frame.grid_columnconfigure(0, weight=1)
-
-        self._trans_progress = ctk.CTkProgressBar(
-            self._progress_frame, height=8, fg_color="#E2E8F0", progress_color="#3B82F6"
-        )
-        self._trans_progress.set(0)
-        self._trans_progress.grid(row=0, column=0, sticky="ew")
-
-        self._trans_eta_var = ctk.StringVar(value="")
-        self._trans_eta_label = ctk.CTkLabel(
-            self._progress_frame, textvariable=self._trans_eta_var,
-            font=ctk.CTkFont(size=11), text_color="gray",
-        )
-        self._trans_eta_label.grid(row=1, column=0, sticky="ew")
-        self._progress_frame.grid_remove()
 
     def _build_notes_tab(self, sub_tabs: ctk.CTkTabview) -> None:
         """Build the Notes sub-tab."""
@@ -293,7 +299,6 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         tab.grid_columnconfigure(0, weight=1)
         tab.grid_rowconfigure(2, weight=1)
 
-        # Controls row
         ctrls = ctk.CTkFrame(tab, fg_color="transparent")
         ctrls.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="ew")
         ctrls.grid_columnconfigure(0, weight=1)
@@ -308,7 +313,6 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
             row=0, column=1, padx=5
         )
 
-        # Generate button
         self._btn_trans_summarize = ctk.CTkButton(
             tab, text="✨  Generar Resumen",
             font=ctk.CTkFont(size=14, weight="bold"), height=40,
@@ -317,13 +321,11 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         )
         self._btn_trans_summarize.grid(row=1, column=0, padx=10, pady=5, sticky="ew")
 
-        # Result area
         self._trans_result_textbox = ctk.CTkTextbox(tab, font=ctk.CTkFont(size=13), wrap="word")
         self._trans_result_textbox.grid(row=2, column=0, padx=10, pady=5, sticky="nsew")
         self._trans_result_textbox.insert("0.0", "El resumen aparecerá aquí…")
         self._trans_result_textbox.configure(state="disabled")
 
-        # Action buttons
         btn_row = ctk.CTkFrame(tab, fg_color="transparent")
         btn_row.grid(row=3, column=0, padx=10, pady=(0, 10), sticky="ew")
         btn_row.grid_columnconfigure((0, 1), weight=1)
@@ -336,7 +338,7 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
             command=self._save_trans_result,
         ).grid(row=0, column=1, padx=(3, 0), sticky="ew")
 
-    # ── Transcription logic ──────────────────────────────────────────────────
+    # ── Queue management ─────────────────────────────────────────────────────
 
     def _refresh_trans_templates_list(self) -> None:
         """Refresh the template list for the transcription result tab."""
@@ -346,102 +348,271 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
             names = ["General"]
         self._trans_templates_menu.configure(values=names)
 
-    def _on_trans_file_changed(self, *args: object) -> None:
-        """Reset transcription text when file changes."""
-        self._trans_textbox.configure(state="normal")
-        self._trans_textbox.delete("0.0", "end")
-        self._trans_textbox.insert("0.0", "La transcripción aparecerá aquí…")
-        self._trans_textbox.configure(state="disabled")
-
-    def _browse_media(self) -> None:
-        """Open file dialog for media files."""
+    def _browse_media_multiple(self) -> None:
+        """Open multi-file dialog for media files and add them to the queue."""
         all_media = " ".join(VIDEO_EXTS + AUDIO_EXTS)
-        path = filedialog.askopenfilename(filetypes=[("Multimedia", all_media), ("Todos", "*.*")])
-        if path:
-            self._trans_file_var.set(path)
-
-    def _start_transcription(self) -> None:
-        """Start transcription in a background thread."""
-        file_path = self._trans_file_var.get().strip()
-        if not file_path:
-            self._show_toast("⚠️  Selecciona un archivo.", kind="info")
+        paths = filedialog.askopenfilenames(
+            filetypes=[("Multimedia", all_media), ("Todos", "*.*")]
+        )
+        if not paths:
             return
-        self._btn_transcribe.configure(state="disabled")
-        self._trans_status_var.set("⏳ Inicializando transcripción…")
-        threading.Thread(target=self._run_transcription, args=(file_path,), daemon=True).start()
+        for raw in paths:
+            p = Path(raw)
+            if str(p) not in self._trans_row_widgets:
+                self._trans_files.append(p)
+                self._add_queue_row(p)
+        self._refresh_queue_label()
 
-    def _prepare_trans_ui(self) -> None:
-        """Prepare the transcription UI for new output."""
-        self._trans_textbox.configure(state="normal")
-        self._trans_textbox.delete("0.0", "end")
-        self._trans_progress.set(0)
-        self._trans_eta_var.set("Calculando tiempo...")
-        self._progress_frame.grid()
+    def _add_queue_row(self, file_path: Path) -> None:
+        """Add a progress row for a single file in the scrollable list."""
+        key = str(file_path)
+        row_index = len(self._trans_row_widgets)
 
-    def _append_trans_text(self, text: str) -> None:
-        """Append text to the transcription textbox."""
-        self._trans_textbox.configure(state="normal")
-        self._trans_textbox.insert("end", text + " ")
-        self._trans_textbox.see("end")
-        self._trans_textbox.configure(state="disabled")
+        # Hide placeholder once we have rows
+        if row_index == 0:
+            self._trans_list_placeholder.grid_remove()
 
-    def _update_trans_progress(self, progress: float, start_time: float) -> None:
-        """Update the transcription progress bar and ETA."""
-        self._trans_progress.set(progress)
-        elapsed = time.time() - start_time
-        if progress > 0.05:
+        row_frame = ctk.CTkFrame(self._trans_list_frame, corner_radius=6)
+        row_frame.grid(row=row_index, column=0, padx=5, pady=4, sticky="ew")
+        row_frame.grid_columnconfigure(1, weight=1)
+
+        # File icon + name
+        ctk.CTkLabel(
+            row_frame, text="⏳", width=28, font=ctk.CTkFont(size=16),
+            anchor="center",
+        ).grid(row=0, column=0, padx=(10, 5), pady=(8, 2))
+
+        ctk.CTkLabel(
+            row_frame, text=file_path.name,
+            font=ctk.CTkFont(size=12, weight="bold"), anchor="w",
+        ).grid(row=0, column=1, padx=0, pady=(8, 2), sticky="ew")
+
+        status_label = ctk.CTkLabel(
+            row_frame, text="En cola…",
+            font=ctk.CTkFont(size=11), text_color="gray", anchor="w",
+        )
+        status_label.grid(row=1, column=1, padx=0, pady=(0, 4), sticky="ew")
+
+        progress_bar = ctk.CTkProgressBar(
+            row_frame, height=6, fg_color="#E2E8F0", progress_color="#3B82F6"
+        )
+        progress_bar.set(0)
+        progress_bar.grid(row=2, column=1, padx=0, pady=(0, 4), sticky="ew")
+
+        pct_label = ctk.CTkLabel(
+            row_frame, text="0%",
+            font=ctk.CTkFont(size=11), text_color="gray", width=40, anchor="e",
+        )
+        pct_label.grid(row=2, column=2, padx=(5, 10), pady=(0, 4))
+
+        self._trans_row_widgets[key] = {
+            "row_frame": row_frame,
+            "status_label": status_label,
+            "progress_bar": progress_bar,
+            "pct_label": pct_label,
+        }
+
+    def _clear_trans_queue(self) -> None:
+        """Remove all files from the queue (only when not running)."""
+        if self._trans_running:
+            self._show_toast("⚠️  No se puede limpiar mientras se transcribe.", kind="info")
+            return
+        for widgets in self._trans_row_widgets.values():
+            widgets["row_frame"].destroy()
+        self._trans_row_widgets.clear()
+        self._trans_files.clear()
+        self._trans_list_placeholder.grid(row=0, column=0, pady=40)
+        self._refresh_queue_label()
+
+    def _refresh_queue_label(self) -> None:
+        """Update the queue counter label and button states."""
+        count = len(self._trans_files)
+        if count == 0:
+            self._trans_queue_label.configure(text="Sin archivos en cola.")
+            self._btn_clear_queue.configure(state="disabled")
+            self._btn_transcribe.configure(state="disabled")
+        else:
+            self._trans_queue_label.configure(text=f"{count} archivo{'s' if count != 1 else ''} en cola.")
+            self._btn_clear_queue.configure(state="normal")
+            self._btn_transcribe.configure(state="normal")
+
+    # ── Batch transcription logic ────────────────────────────────────────────
+
+    def _start_batch_transcription(self) -> None:
+        """Start batch transcription of all queued files in a background thread."""
+        if not self._trans_files:
+            self._show_toast("⚠️  Agrega al menos un archivo.", kind="info")
+            return
+        if self._trans_running:
+            return
+        self._trans_running = True
+        self._btn_transcribe.configure(state="disabled", text="⏳  Transcribiendo…")
+        self._btn_add_files.configure(state="disabled")
+        self._btn_clear_queue.configure(state="disabled")
+        threading.Thread(target=self._run_batch_transcription, daemon=True).start()
+
+    def _run_batch_transcription(self) -> None:
+        """Process each file in the queue sequentially (background thread)."""
+        transcriber = get_transcriber(
+            self._config.get("engine", "offline"),
+            self._config.get("model", "small"),
+            self._config.get("language", "auto"),
+        )
+        move_processed = self._config.get("move_processed", True)
+        output_folder_str = self._config.get("output_folder", "")
+
+        for file_path in list(self._trans_files):
+            key = str(file_path)
+            tmp_path: Path | None = None
+
+            # Skip files that no longer exist (already moved/processed in a previous run)
+            if not file_path.exists():
+                self._trans_files.remove(file_path)
+                self.after(0, self._set_row_error, key, "Archivo no encontrado (ya procesado)")
+                continue
+
+            try:
+                # ── Update UI: extracting audio ──────────────────────────────
+                self.after(0, self._set_row_status, key, "⏳ Extrayendo audio…", "#F59E0B")
+
+                audio_path = file_path
+                if file_path.suffix.lower() in [".mp4", ".mkv", ".avi", ".mov", ".webm"]:
+                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_file:
+                        tmp_path = Path(tmp_file.name)
+                    convert_video_to_audio(str(file_path), str(tmp_path))
+                    audio_path = tmp_path
+
+                # ── Update UI: transcribing ──────────────────────────────────
+                self.after(0, self._set_row_status, key, "🎙️ Transcribiendo…", "#3B82F6")
+
+                segments: list[str] = []
+                start_time = time.time()
+
+                for msg_type, content in transcriber.transcribe_stream(
+                    audio_path, self._config.get("language", "auto")
+                ):
+                    if msg_type == "segment":
+                        segments.append(content)
+                    elif msg_type == "progress":
+                        elapsed = time.time() - start_time
+                        self.after(0, self._update_row_progress, key, content, elapsed)
+
+                full_text = " ".join(segments)
+
+                # ── Save .txt ────────────────────────────────────────────────
+                output_dir = Path(output_folder_str) if output_folder_str else file_path.parent
+                output_dir.mkdir(parents=True, exist_ok=True)
+                txt_path = output_dir / (file_path.stem + "_transcripcion.txt")
+                txt_path.write_text(full_text, encoding="utf-8")
+
+                # ── Move video to 'procesados/' ──────────────────────────────
+                if move_processed and file_path.suffix.lower() in [".mp4", ".mkv", ".avi", ".mov", ".webm"]:
+                    dest_dir = file_path.parent / "procesados"
+                    dest_dir.mkdir(exist_ok=True)
+                    dest_path = dest_dir / file_path.name
+                    if dest_path.exists():
+                        stem = file_path.stem
+                        suffix = file_path.suffix
+                        counter = 1
+                        while dest_path.exists():
+                            dest_path = dest_dir / f"{stem}_{counter}{suffix}"
+                            counter += 1
+                    shutil.move(str(file_path), str(dest_path))
+
+                # Remove from queue so re-pressing Transcribir won't retry it
+                self._trans_files.remove(file_path)
+                self.after(0, self._set_row_done, key, str(txt_path.name), str(txt_path.parent))
+
+            except Exception as exc:
+                log.exception("Batch transcription failed for %s", file_path)
+                self.after(0, self._set_row_error, key, str(exc))
+            finally:
+                if tmp_path:
+                    tmp_path.unlink(missing_ok=True)
+
+        self.after(0, self._on_batch_done)
+
+    def _set_row_status(self, key: str, text: str, color: str) -> None:
+        """Update the status label of a queue row."""
+        widgets = self._trans_row_widgets.get(key)
+        if widgets:
+            widgets["status_label"].configure(text=text, text_color=color)
+
+    def _update_row_progress(self, key: str, progress: float, elapsed: float) -> None:
+        """Update progress bar and percentage label of a queue row."""
+        widgets = self._trans_row_widgets.get(key)
+        if not widgets:
+            return
+        widgets["progress_bar"].configure(progress_color="#3B82F6")
+        widgets["progress_bar"].set(progress)
+        pct = int(progress * 100)
+        if progress > 0.05 and elapsed > 0:
             total_est = elapsed / progress
             remaining = total_est - elapsed
             mins, secs = divmod(int(remaining), 60)
-            self._trans_eta_var.set(f"Progreso: {int(progress * 100)}% | Est. restante: {mins:02d}:{secs:02d}")
+            widgets["pct_label"].configure(text=f"{pct}%")
+            widgets["status_label"].configure(
+                text=f"🎙️ Transcribiendo… {mins:02d}:{secs:02d} restantes", text_color="#3B82F6"
+            )
+        else:
+            widgets["pct_label"].configure(text=f"{pct}%")
 
-    def _run_transcription(self, file_path: str) -> None:
-        """Run transcription in background thread."""
-        tmp_path: Path | None = None
-        try:
-            audio_path = Path(file_path)
-            if audio_path.suffix.lower() in [".mp4", ".mkv", ".avi", ".mov", ".webm"]:
-                self.after(0, self._trans_status_var.set, "⏳ Extrayendo audio...")
-                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_file:
-                    tmp_path = Path(tmp_file.name)
-                convert_video_to_audio(file_path, str(tmp_path))
-                audio_path = tmp_path
+    def _set_row_done(self, key: str, txt_filename: str, txt_folder: str) -> None:
+        """Mark a queue row as completed and add an open-folder button."""
+        import subprocess
+        import sys as _sys
+        widgets = self._trans_row_widgets.get(key)
+        if not widgets:
+            return
+        widgets["progress_bar"].set(1.0)
+        widgets["progress_bar"].configure(progress_color="#10B981")
+        widgets["pct_label"].configure(text="100%")
+        widgets["status_label"].configure(
+            text=f"✅ Completado — {txt_filename}", text_color="#10B981"
+        )
+        row_frame = widgets["row_frame"]
 
-            self.after(0, self._trans_status_var.set, "🎙️ Transcribiendo en vivo...")
-            self.after(0, self._prepare_trans_ui)
+        def _open_folder(folder: str = txt_folder) -> None:
+            if _sys.platform == "darwin":
+                subprocess.Popen(["open", folder])
+            elif _sys.platform == "win32":
+                subprocess.Popen(["explorer", folder])
+            else:
+                subprocess.Popen(["xdg-open", folder])
 
-            transcriber = get_transcriber(
-                self._config.get("engine", "offline"),
-                self._config.get("model", "small"),
-                self._config.get("language", "auto"),
+        open_btn = ctk.CTkButton(
+            row_frame, text="📂", width=36, height=24,
+            font=ctk.CTkFont(size=12),
+            fg_color="gray30", hover_color="gray40",
+            command=_open_folder,
+        )
+        open_btn.grid(row=0, column=3, padx=(0, 10), pady=(8, 2))
+
+    def _set_row_error(self, key: str, error_msg: str) -> None:
+        """Mark a queue row as failed."""
+        widgets = self._trans_row_widgets.get(key)
+        if widgets:
+            widgets["progress_bar"].configure(progress_color="#EF4444")
+            widgets["status_label"].configure(
+                text=f"❌ Error: {error_msg[:60]}", text_color="#EF4444"
             )
 
-            start_time = time.time()
-            for msg_type, content in transcriber.transcribe_stream(audio_path, self._config.get("language", "auto")):
-                if msg_type == "segment":
-                    self.after(0, self._append_trans_text, content)
-                elif msg_type == "progress":
-                    self.after(0, self._update_trans_progress, content, start_time)
+    def _on_batch_done(self) -> None:
+        """Re-enable controls after all batch items are processed."""
+        self._trans_running = False
+        self._btn_transcribe.configure(state="normal", text="🎙️  Transcribir Todo")
+        self._btn_add_files.configure(state="normal")
+        self._btn_clear_queue.configure(state="normal")
+        self._show_toast("✅ Lote de transcripción completado.")
 
-            self.after(0, self._on_trans_success)
-        except Exception as e:
-            self.after(0, self._on_generic_error, str(e), self._btn_transcribe, self._trans_status_var)
-        finally:
-            if tmp_path:
-                tmp_path.unlink(missing_ok=True)
 
-    def _on_trans_success(self) -> None:
-        """Handle successful transcription."""
-        self._btn_transcribe.configure(state="normal")
-        self._trans_status_var.set("✅ Transcripción completa.")
-        self._trans_progress.set(1.0)
-        self._trans_eta_var.set("Finalizado.")
-        self._show_toast("✅ Transcripción completada.")
+    # ── Transcription AI summarization ───────────────────────────────────────
 
     def _start_trans_summarization(self) -> None:
-        """Start AI summarization of transcription + notes."""
-        text = self._trans_textbox.get("0.0", "end").strip()
-        if not text or text == "La transcripción aparecerá aquí…":
+        """Start AI summarization — requires transcription text in the result textbox."""
+        text = self._trans_result_textbox.get("0.0", "end").strip()
+        # Also check if there's any completed transcription to summarize
+        if not text or text == "El resumen aparecerá aquí…":
             self._show_toast("⚠️  Primero transcribe un audio/video.", kind="info")
             return
 
@@ -450,13 +621,11 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
             self._show_toast("⚠️ Configura la API Key de Groq en Ajustes.", kind="error")
             return
 
-        # Concatenate notes if present
         notes = self._notes_textbox.get("0.0", "end").strip()
         if notes:
             text += "\n\nNotas adicionales del usuario:\n" + notes
 
         self._btn_trans_summarize.configure(state="disabled")
-        self._trans_status_var.set("⏳ Generando resumen con IA…")
 
         template_name = self._trans_template_var.get()
         templates = template_manager.get_all_templates()
@@ -481,7 +650,7 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
             self.after(0, self._on_trans_summary_success)
         except Exception as e:
             log.exception("Trans summarization failed")
-            self.after(0, self._on_generic_error, str(e), self._btn_trans_summarize, self._trans_status_var)
+            self.after(0, self._on_generic_error, str(e), self._btn_trans_summarize, ctk.StringVar())
 
     def _prepare_trans_result_ui(self) -> None:
         """Prepare the transcription result textbox."""
@@ -499,7 +668,6 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
     def _on_trans_summary_success(self) -> None:
         """Handle successful transcription summarization."""
         self._btn_trans_summarize.configure(state="normal")
-        self._trans_status_var.set("✅ Resumen generado.")
         self._show_toast("✨ Resumen generado con éxito.")
 
     def _copy_trans_result(self) -> None:
@@ -530,7 +698,6 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         frame.grid_rowconfigure(1, weight=1)
         frame.grid_rowconfigure(4, weight=1)
 
-        # Input area
         ctk.CTkLabel(
             frame, text="✨ Resumen Rápido — Pega o escribe cualquier texto",
             font=ctk.CTkFont(size=14, weight="bold"), anchor="w",
@@ -539,7 +706,6 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         self._summary_input_textbox = ctk.CTkTextbox(frame, font=ctk.CTkFont(size=13), wrap="word")
         self._summary_input_textbox.grid(row=1, column=0, padx=15, pady=5, sticky="nsew")
 
-        # Controls
         ctrls = ctk.CTkFrame(frame, fg_color="transparent")
         ctrls.grid(row=2, column=0, padx=15, pady=5, sticky="ew")
         ctrls.grid_columnconfigure(0, weight=1)
@@ -562,18 +728,15 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         )
         self._btn_summary_generate.grid(row=0, column=2, padx=(5, 0))
 
-        # Separator
         ctk.CTkLabel(
             frame, text="Resultado:", font=ctk.CTkFont(size=12, weight="bold"), anchor="w",
         ).grid(row=3, column=0, padx=15, pady=(10, 0), sticky="ew")
 
-        # Result area
         self._summary_result_textbox = ctk.CTkTextbox(frame, font=ctk.CTkFont(size=13), wrap="word")
         self._summary_result_textbox.grid(row=4, column=0, padx=15, pady=5, sticky="nsew")
         self._summary_result_textbox.insert("0.0", "El resumen aparecerá aquí…")
         self._summary_result_textbox.configure(state="disabled")
 
-        # Action buttons
         btn_row = ctk.CTkFrame(frame, fg_color="transparent")
         btn_row.grid(row=5, column=0, padx=15, pady=(0, 15), sticky="ew")
         btn_row.grid_columnconfigure((0, 1), weight=1)
@@ -624,7 +787,6 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         """Run standalone summarization in background thread."""
         try:
             log.info("Starting standalone summary | engine=%s", self._config.get("llm_engine"))
-            # Prepare result UI
             self.after(0, self._prepare_summary_result_ui)
             summarizer = Summarizer(self._config)
             for chunk in summarizer.summarize_stream(text, template_body, self._summary_translate_var.get()):
@@ -743,6 +905,7 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         except Exception as e:
             self.after(0, self._on_generic_error, str(e), self._btn_conv, self._conv_status_var)
 
+
     # ══════════════════════════════════════════════════════════════════════════
     # Section 4 — Configuración
     # ══════════════════════════════════════════════════════════════════════════
@@ -763,6 +926,7 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         # --- General ---
         g = sub_tabs.tab("General")
         g.grid_columnconfigure(1, weight=1)
+
         self._engine_sel = self._add_setting_menu(
             g, 0, "Motor Transcripción:", _ENGINE_VALUES, _ENGINE_LABELS.get(self._config["engine"], "offline")
         )
@@ -772,9 +936,37 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         self._lang_sel = self._add_setting_menu(
             g, 2, "Idioma Entrada:", _LANGUAGE_VALUES, _LANGUAGE_LABELS.get(self._config["language"], "auto")
         )
-        ctk.CTkButton(g, text="💾 Guardar Transcripción", command=self._save_trans_settings).grid(
-            row=3, column=0, columnspan=2, padx=10, pady=20, sticky="ew"
+
+        # ── Batch options ────────────────────────────────────────────────────
+        batch_frame = ctk.CTkFrame(g, fg_color="transparent")
+        batch_frame.grid(row=3, column=0, columnspan=2, padx=10, pady=(15, 5), sticky="ew")
+        batch_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            batch_frame, text="Opciones de lote:",
+            font=ctk.CTkFont(size=12, weight="bold"), anchor="w",
+        ).grid(row=0, column=0, columnspan=2, padx=0, pady=(0, 8), sticky="ew")
+
+        self._move_processed_var = ctk.BooleanVar(value=self._config.get("move_processed", True))
+        ctk.CTkCheckBox(
+            batch_frame,
+            text="Mover videos procesados a carpeta 'procesados/'",
+            variable=self._move_processed_var,
+        ).grid(row=1, column=0, columnspan=2, padx=0, pady=4, sticky="w")
+
+        ctk.CTkLabel(batch_frame, text="Carpeta de salida .txt:", anchor="w").grid(
+            row=2, column=0, padx=(0, 10), pady=5, sticky="w"
         )
+        self._output_folder_entry = ctk.CTkEntry(
+            batch_frame, placeholder_text="Vacío = misma carpeta del video"
+        )
+        self._output_folder_entry.insert(0, self._config.get("output_folder", ""))
+        self._output_folder_entry.grid(row=2, column=1, pady=5, sticky="ew")
+
+        ctk.CTkButton(
+            g, text="💾 Guardar Configuración General",
+            command=self._save_trans_settings,
+        ).grid(row=4, column=0, columnspan=2, padx=10, pady=20, sticky="ew")
 
         # --- Summarizer ---
         s = sub_tabs.tab("Summarizer (IA)")
@@ -843,7 +1035,6 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         templates = template_manager.get_all_templates()
         names = ["Nuevo..."] + [t["name"] for t in templates]
         self._tpl_selector.configure(values=names)
-        # Also refresh template lists in other sections
         self._refresh_trans_templates_list()
         self._refresh_summary_templates_list()
 
@@ -854,12 +1045,12 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
             self._tpl_body_text.delete("0.0", "end")
         else:
             templates = template_manager.get_all_templates()
-            t = next((x for x in templates if x["name"] == name), None)
-            if t:
+            tmpl = next((x for x in templates if x["name"] == name), None)
+            if tmpl:
                 self._tpl_name_entry.delete(0, "end")
-                self._tpl_name_entry.insert(0, t["name"])
+                self._tpl_name_entry.insert(0, tmpl["name"])
                 self._tpl_body_text.delete("0.0", "end")
-                self._tpl_body_text.insert("0.0", t["body"])
+                self._tpl_body_text.insert("0.0", tmpl["body"])
 
     def _save_template_item(self) -> None:
         """Save a template from the editor."""
@@ -891,14 +1082,16 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         return m
 
     def _save_trans_settings(self) -> None:
-        """Save transcription settings."""
+        """Save transcription and batch settings."""
         self._config.update({
             "engine": _ENGINE_KEYS[_ENGINE_VALUES.index(self._engine_sel.get())],
             "model": _MODEL_KEYS[_MODEL_VALUES.index(self._model_sel.get())],
             "language": _LANGUAGE_KEYS[_LANGUAGE_VALUES.index(self._lang_sel.get())],
+            "move_processed": self._move_processed_var.get(),
+            "output_folder": self._output_folder_entry.get().strip(),
         })
         save_config(self._config)
-        self._show_toast("✅ Ajustes de transcripción guardados.")
+        self._show_toast("✅ Ajustes guardados.")
         self._update_status_bar()
 
     def _save_llm_settings(self) -> None:
@@ -992,10 +1185,8 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         engine_key = self._config.get("engine", "offline")
         engine_label = "Offline" if engine_key == "offline" else "Online"
         self._status_engine_lbl.configure(text=f"Motor: {engine_label}")
-
         model_key = self._config.get("model", "small")
         self._status_model_lbl.configure(text=f"Modelo: {model_key}")
-
         if self._ollama_connected:
             self._status_ollama_lbl.configure(text="Ollama: ✅ conectado", text_color="#4ade80")
         else:
@@ -1019,6 +1210,4 @@ class KonverterApp(ctk.CTk):  # type: ignore[misc]
         ctk.CTkLabel(file_frame, text=label, width=140, anchor="w").grid(row=0, column=0, padx=10, pady=8)
         ctk.CTkEntry(file_frame, textvariable=var, state="readonly").grid(row=0, column=1, padx=6, pady=8, sticky="ew")
         ctk.CTkButton(file_frame, text="📁 Examinar", width=110, command=browse_fn).grid(row=0, column=2, padx=10, pady=8)
-
-
 
